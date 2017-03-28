@@ -1,9 +1,43 @@
 (function(global) {
 "use strict";
 
-const hidden = {
-    magic : new Uint8Array([0xCA, 0xFE, 0xBA, 0xBE]),
-    supportedVersion : new Uint8Array([0x00, 0x00, 0x00, 0x34]),
+let ConstantRef = function(type, idx) {
+    this.type = type;
+    this.idx = idx;
+}
+
+let CompositeConstantRef = function(type, idx1, idx2) {
+    this.type = type;
+    this.idx1 = idx1;
+    this.idx2 = idx2;
+}
+
+let JavaClass = function(access, name, parent, interfaces, constants, attributes, fields, methods) {
+    this.access = access;
+    this.name = name;
+    this.parent = parent;
+    this.interfaces = interfaces;
+    this.constants = constants;
+    this.attributes = attributes;
+    this.fields = fields;
+    this.methods = methods;
+}
+
+const prv = {
+    magic : 0xCAFEBABE,
+    supportedVersion : [52, 0],
+
+    u1 : function(arr, offset) {
+        return arr[offset] >>> 0;
+    },
+
+    u2 : function(arr, offset) {
+        return (arr[offset] << 8 >>> 0) + arr[offset + 1];
+    },
+
+    u4 : function(arr, offset) {
+        return (arr[offset] << 24 >>> 0) + (arr[offset + 1] << 16) + (arr[offset + 2] << 8) + arr[offset + 3];
+    },
 
     compareArrays : function(a, b) {
         if (a.length === undefined || b.length === undefined || !isFinite(a.length) || !isFinite(b.length)) {
@@ -21,26 +55,79 @@ const hidden = {
         return true;
     },
 
-    checkMagic : function(binary) {
-        let viewMagic = new Uint8Array(binary, 0, 4);
-        return this.compareArrays(viewMagic, this.magic);
+    checkMagic : function(arr) {
+        let magic = prv.u4(arr, 0);
+        return magic === prv.magic;
     },
 
-    checkVersion : function(binary) {
-        let viewVersion = new Uint8Array(binary, 4, 4);
-        return this.compareArrays(viewVersion, this.supportedVersion);
-    }
-}
+    checkVersion : function(arr) {
+        let minor = prv.u2(arr, 4);
+        let major = prv.u2(arr, 6);
+        return this.compareArrays([major, minor], prv.supportedVersion);
+    },
 
-let JavaClass = function(access, name, parent, interfaces, constants, attributes, fields, methods) {
-    this.access = access;
-    this.name = name;
-    this.parent = parent;
-    this.interfaces = interfaces;
-    this.constants = constants;
-    this.attributes = attributes;
-    this.fields = fields;
-    this.methods = methods;
+    validateClass : function(arr) {
+        if (prv.checkMagic(arr)) {
+            console.debug("It's a Java class!");
+        }
+        else {
+            throw new Error("It's not a Java class - magic bytes do not match");
+        }
+        if (prv.checkVersion(arr)) {
+            console.debug("Detected supported class file format version")
+        }
+        else {
+            console.warn("Detected unsupported class file format version")
+        }
+    },
+
+    readConstant : function(arr, offset) {
+        let tag = prv.u1(arr, offset);
+        offset += 1;
+
+        switch (tag) {
+            // Utf8
+            case 1:
+                let length = prv.u2(arr, offset);
+                return [new StringView(arr, "UTF-8", offset + 2, length), length + 3 ]
+                break;
+            // Methodref
+            case 10:
+                return [new CompositeConstantRef("method", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
+                break;
+            // Fieldref
+            case 9:
+                return [new CompositeConstantRef("field", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
+                break;
+            // String
+            case 8:
+                return [new ConstantRef("string", prv.u2(arr, offset)), 3];
+                break;
+            // Class
+            case 7:
+                return [new ConstantRef("class", prv.u2(arr, offset)), 3];
+                break;
+            // NameAndType
+            case 12:
+                return [new CompositeConstantRef("name&type", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
+                break;
+            default:
+                throw new Error("Unsupported tag: " + tag);
+        }
+    },
+
+    readConstants : function(arr, base) {
+        let size = prv.u2(arr, base);
+
+        let offset = base + 2;
+        let constants = [null];
+        for (let i = 1; i < size; ++i) {
+            var [constant, next] = prv.readConstant(arr, offset);
+            constants.push(constant);
+            offset += next;
+        }
+        return constants;
+    }
 }
 
 let JavaJS = function() {
@@ -58,28 +145,16 @@ JavaJS.prototype.register = function(javaClass) {
 
 JavaJS.prototype.load = function(binary) {
     console.log(binary.byteLength);
-    if (hidden.checkMagic(binary)) {
-        console.debug("It's a Java class!");
-    }
-    else {
-        console.error("It's not a Java class - magic bytes do not match");
-        return;
-    }
-    if (hidden.checkVersion(binary)) {
-        console.debug("Detected supported class file format version")
-    }
-    else {
-        console.warn("Detected unsupported class file format version")
-    }
-
-    let clazz = new Uint8Array(binary, 8);
+    let clazz = new Uint8Array(binary);
     console.log(clazz);
 
-    let constants = hidden.readConstants(binary);
-    let meta = hidden.readMeta(binary, constants);
-    let fields = hidden.readFields(binary, constants);
-    let methods = hidden.readFields(binary, constants);
-    let attributes = hidden.readAttributes(binary, constants);
+    prv.validateClass(clazz);
+
+    let constants = prv.readConstants(clazz, 8);
+    let meta = prv.readMeta(binary, constants);
+    let fields = prv.readFields(binary, constants);
+    let methods = prv.readFields(binary, constants);
+    let attributes = prv.readAttributes(binary, constants);
 
     let newClass = new JavaClass();
     if (this.register(newClass)) {
