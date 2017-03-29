@@ -32,11 +32,11 @@ const prv = {
     },
 
     u2 : function(arr, offset) {
-        return (arr[offset] << 8 >>> 0) + arr[offset + 1];
+        return (arr[offset] << 8 >>> 0) + (arr[offset + 1] >>> 0);
     },
 
     u4 : function(arr, offset) {
-        return (arr[offset] << 24 >>> 0) + (arr[offset + 1] << 16) + (arr[offset + 2] << 8) + arr[offset + 3];
+        return (arr[offset] << 24 >>> 0) + (arr[offset + 1] << 16 >>> 0) + (arr[offset + 2] << 8 >>> 0) + (arr[offset + 3] >>> 0);
     },
 
     compareArrays : function(a, b) {
@@ -53,6 +53,18 @@ const prv = {
             }
         }
         return true;
+    },
+
+    readMultiple : function(arr, base, entryReader, seed) {
+        let size = prv.u2(arr, base);
+        let offset = base + 2;
+        let entries = seed === undefined ? [] : seed;
+        for (let i = entries.length; i < size; ++i) {
+            var [entry, next] = entryReader(arr, offset);
+            entries.push(entry);
+            offset += next;
+        }
+        return [entries, offset];
     },
 
     checkMagic : function(arr) {
@@ -117,43 +129,53 @@ const prv = {
     },
 
     readConstants : function(arr, base) {
-        let size = prv.u2(arr, base);
-
-        let offset = base + 2;
-        let constants = [null];
-        for (let i = 1; i < size; ++i) {
-            var [constant, next] = prv.readConstant(arr, offset);
-            constants.push(constant);
-            offset += next;
-        }
-        return [constants, offset];
+        return prv.readMultiple(arr, base, prv.readConstant, [null]);
     },
 
     readMeta : function(arr, base) {
         let offset = base;
         let meta = {};
-        return [meta, offset];
+        meta.access = prv.u2(arr, offset);
+        offset += 2;
+        meta.name = new ConstantRef("this", prv.u2(arr, offset))
+        offset += 2;
+        meta.parent = new ConstantRef("super", prv.u2(arr, offset))
+        offset += 2;
+        let [interfaces, lastOffset] = prv.readInterfaces(arr, offset);
+        meta.interfaces = interfaces;
+        return [meta, lastOffset];
+    },
+
+    readInterface : function(arr, base) {
+
+    },
+
+    readInterfaces : function(arr, base) {
+        return prv.readMultiple(arr, base, prv.readInterface);
+    },
+
+    readField : function(arr, base) {
+
     },
 
     readFields : function(arr, base) {
-        let size = prv.u2(arr, base);
-        let offset = base + 2;
-        let fields = [];
-        return [fields, offset];
+        return prv.readMultiple(arr, base, prv.readField);
+    },
+
+    readMethod : function(arr, base) {
+
     },
 
     readMethods : function(arr, base) {
-        let size = prv.u2(arr, base);
-        let offset = base + 2;
-        let methods = [];
-        return [methods, offset];
+        return prv.readMultiple(arr, base, prv.readMethod);
+    },
+
+    readAttribute : function(arr, base) {
+
     },
 
     readAttributes : function(arr, base) {
-        let size = prv.u2(arr, base);
-        let offset = base + 2;
-        let attributes = [];
-        return [attributes, offset];
+        return prv.readMultiple(arr, base, prv.readAttribute);
     },
 }
 
@@ -179,10 +201,10 @@ JavaJS.prototype.load = function(binary) {
 
     let offset = 8;
     let [constants, metaOffset] = prv.readConstants(clazz, offset);
-    let [meta, fieldsOffset] = prv.readMeta(binary, metaOffset);
-    let [fields, methodsOffset] = prv.readFields(binary, fieldsOffset);
-    let [methods, attribsOffset] = prv.readMethods(binary, methodsOffset);
-    let [attributes, end] = prv.readAttributes(binary, attribsOffset);
+    let [meta, fieldsOffset] = prv.readMeta(clazz, metaOffset);
+    let [fields, methodsOffset] = prv.readFields(clazz, fieldsOffset);
+    let [methods, attribsOffset] = prv.readMethods(clazz, methodsOffset);
+    let [attributes, end] = prv.readAttributes(clazz, attribsOffset);
 
     if (end !== binary.byteLength) {
         console.warn("Class binary was not fully consumed");
