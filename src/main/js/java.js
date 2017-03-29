@@ -126,8 +126,35 @@ const prv = {
             constants.push(constant);
             offset += next;
         }
-        return constants;
-    }
+        return [constants, offset];
+    },
+
+    readMeta : function(arr, base) {
+        let offset = base;
+        let meta = {};
+        return [meta, offset];
+    },
+
+    readFields : function(arr, base) {
+        let size = prv.u2(arr, base);
+        let offset = base + 2;
+        let fields = [];
+        return [fields, offset];
+    },
+
+    readMethods : function(arr, base) {
+        let size = prv.u2(arr, base);
+        let offset = base + 2;
+        let methods = [];
+        return [methods, offset];
+    },
+
+    readAttributes : function(arr, base) {
+        let size = prv.u2(arr, base);
+        let offset = base + 2;
+        let attributes = [];
+        return [attributes, offset];
+    },
 }
 
 let JavaJS = function() {
@@ -150,13 +177,18 @@ JavaJS.prototype.load = function(binary) {
 
     prv.validateClass(clazz);
 
-    let constants = prv.readConstants(clazz, 8);
-    let meta = prv.readMeta(binary, constants);
-    let fields = prv.readFields(binary, constants);
-    let methods = prv.readFields(binary, constants);
-    let attributes = prv.readAttributes(binary, constants);
+    let offset = 8;
+    let [constants, metaOffset] = prv.readConstants(clazz, offset);
+    let [meta, fieldsOffset] = prv.readMeta(binary, metaOffset);
+    let [fields, methodsOffset] = prv.readFields(binary, fieldsOffset);
+    let [methods, attribsOffset] = prv.readMethods(binary, methodsOffset);
+    let [attributes, end] = prv.readAttributes(binary, attribsOffset);
 
-    let newClass = new JavaClass();
+    if (end !== binary.byteLength) {
+        console.warn("Class binary was not fully consumed");
+    }
+
+    let newClass = new JavaClass(meta.access, meta.name, meta.parent, meta.interfaces, constants, attributes, fields, methods);
     if (this.register(newClass)) {
         console.info("Class", newClass, "registered");
     }
