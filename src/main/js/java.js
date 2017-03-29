@@ -147,7 +147,7 @@ const prv = {
     },
 
     readInterface : function(arr, base) {
-
+        return [new ConstantRef("interface", prv.u2(arr, base)), 2];
     },
 
     readInterfaces : function(arr, base) {
