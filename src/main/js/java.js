@@ -12,16 +12,32 @@ let CompositeConstantRef = function(type, idx1, idx2) {
     this.idx2 = idx2;
 }
 
-let JavaClass = function(access, name, parent, interfaces, constants, attributes, fields, methods) {
+let JavaField = function(access, name, descriptor, attributes) {
+    this.access = access;
+    this.name = name;
+    this.descriptor = descriptor;
+    this.attributes = attributes;
+}
+
+let JavaMethod = function(access, name, descriptor, attributes) {
+    this.access = access;
+    this.name = name;
+    this.descriptor = descriptor;
+    this.attributes = attributes;
+}
+
+let JavaClass = function(access, name, parent, interfaces, constants, fields, methods, attributes) {
     this.access = access;
     this.name = name;
     this.parent = parent;
     this.interfaces = interfaces;
     this.constants = constants;
-    this.attributes = attributes;
     this.fields = fields;
     this.methods = methods;
+    this.attributes = attributes;
 }
+
+console.log(new JavaField(), new JavaMethod());
 
 const prv = {
     magic : 0xCAFEBABE,
@@ -136,12 +152,9 @@ const prv = {
         let offset = base;
         let meta = {};
         meta.access = prv.u2(arr, offset);
-        offset += 2;
-        meta.name = new ConstantRef("this", prv.u2(arr, offset))
-        offset += 2;
-        meta.parent = new ConstantRef("super", prv.u2(arr, offset))
-        offset += 2;
-        let [interfaces, lastOffset] = prv.readInterfaces(arr, offset);
+        meta.name = new ConstantRef("this", prv.u2(arr, offset + 2))
+        meta.parent = new ConstantRef("super", prv.u2(arr, offset + 4))
+        let [interfaces, lastOffset] = prv.readInterfaces(arr, offset + 6);
         meta.interfaces = interfaces;
         return [meta, lastOffset];
     },
@@ -154,24 +167,29 @@ const prv = {
         return prv.readMultiple(arr, base, prv.readInterface);
     },
 
-    readField : function(arr, base) {
-
+    readFieldOrMethod : function(Factory) {
+        return function(arr, base) {
+            let access = prv.u2(arr, base);
+            let name = new ConstantRef("name", prv.u2(arr, base + 2));
+            let descriptor = new ConstantRef("name", prv.u2(arr, base + 4));
+            let [attributes, lastOffset] = prv.readAttributes(arr, offset + 6);
+            let field = new Factory(access, name, descriptor, attributes);
+            return [field, lastOffset];
+        }
     },
 
     readFields : function(arr, base) {
-        return prv.readMultiple(arr, base, prv.readField);
-    },
-
-    readMethod : function(arr, base) {
-
+        return prv.readMultiple(arr, base, prv.readFieldOrMethod(JavaField));
     },
 
     readMethods : function(arr, base) {
-        return prv.readMultiple(arr, base, prv.readMethod);
+        return prv.readMultiple(arr, base, prv.readFieldOrMethod(JavaMethod));
     },
 
     readAttribute : function(arr, base) {
-
+        let name = prv.u2(arr, base);
+        let size = prv.u4(arr, base + 2);
+        return [{}, base + size + 6];
     },
 
     readAttributes : function(arr, base) {
@@ -210,7 +228,7 @@ JavaJS.prototype.load = function(binary) {
         console.warn("Class binary was not fully consumed");
     }
 
-    let newClass = new JavaClass(meta.access, meta.name, meta.parent, meta.interfaces, constants, attributes, fields, methods);
+    let newClass = new JavaClass(meta.access, meta.name, meta.parent, meta.interfaces, constants, fields, methods, attributes);
     if (this.register(newClass)) {
         console.info("Class", newClass, "registered");
     }

@@ -7,7 +7,12 @@ function loadClass(path, loader) {
     req.addEventListener("load", function(ev) {
         if (ev.target.status === 200) {
             console.log("Fetched class:", path);
-            loader(ev.target.response);
+            try {
+                loader(ev.target.response);
+            }
+            catch (e) {
+                console.error("FAILED!", e);
+            }
         }
         else {
             console.error("Failed to load class:", path);
