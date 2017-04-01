@@ -37,8 +37,6 @@ let JavaClass = function(access, name, parent, interfaces, constants, fields, me
     this.attributes = attributes;
 }
 
-console.log(new JavaField(), new JavaMethod());
-
 const prv = {
     magic : 0xCAFEBABE,
     supportedVersion : [52, 0],
@@ -172,9 +170,9 @@ const prv = {
             let access = prv.u2(arr, base);
             let name = new ConstantRef("name", prv.u2(arr, base + 2));
             let descriptor = new ConstantRef("name", prv.u2(arr, base + 4));
-            let [attributes, lastOffset] = prv.readAttributes(arr, offset + 6);
+            let [attributes, lastOffset] = prv.readAttributes(arr, base + 6);
             let field = new Factory(access, name, descriptor, attributes);
-            return [field, lastOffset];
+            return [field, lastOffset - base];
         }
     },
 
@@ -189,7 +187,8 @@ const prv = {
     readAttribute : function(arr, base) {
         let name = prv.u2(arr, base);
         let size = prv.u4(arr, base + 2);
-        return [{}, base + size + 6];
+        console.info("readAttribute", base, size + 6);
+        return [{}, size + 6];
     },
 
     readAttributes : function(arr, base) {
@@ -211,14 +210,14 @@ JavaJS.prototype.register = function(javaClass) {
 }
 
 JavaJS.prototype.load = function(binary) {
-    console.log(binary.byteLength);
+    console.log("Read:", binary.byteLength);
     let clazz = new Uint8Array(binary);
     console.log(clazz);
 
     prv.validateClass(clazz);
 
-    let offset = 8;
-    let [constants, metaOffset] = prv.readConstants(clazz, offset);
+    let constantsOffset = 8;
+    let [constants, metaOffset] = prv.readConstants(clazz, constantsOffset);
     let [meta, fieldsOffset] = prv.readMeta(clazz, metaOffset);
     let [fields, methodsOffset] = prv.readFields(clazz, fieldsOffset);
     let [methods, attribsOffset] = prv.readMethods(clazz, methodsOffset);
