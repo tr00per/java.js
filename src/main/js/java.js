@@ -188,7 +188,7 @@ const prv = {
         let name = prv.u2(arr, base);
         let size = prv.u4(arr, base + 2);
         console.info("readAttribute", base, size + 6);
-        return [{}, size + 6];
+        return [arr.slice(base, base + size), size + 6];
     },
 
     readAttributes : function(arr, base) {
