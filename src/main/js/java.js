@@ -12,6 +12,11 @@ let CompositeConstantRef = function(type, idx1, idx2) {
     this.idx2 = idx2;
 }
 
+let JavaAttribute = function(name, data) {
+    this.name = name;
+    this.data = data;
+}
+
 let JavaField = function(access, name, descriptor, attributes) {
     this.access = access;
     this.name = name;
@@ -138,7 +143,20 @@ const prv = {
                 return [new CompositeConstantRef("name&type", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
                 break;
             default:
-                throw new Error("Unsupported tag: " + tag);
+                throw new Error("Unsupported constant tag: " + tag);
+        }
+    },
+
+    readAttribute : function(arr, base) {
+        let tag = prv.u2(arr, base);
+        let size = prv.u4(arr, base + 2);
+        console.info("readAttribute", base, size + 6, "->", tag);
+        switch (tag) {
+            // Code
+            case 9:
+                return [new JavaAttribute("Code"", arr.slice(base + 6, base + 6 + size)), size + 6];
+            default:
+                throw new Error("Unsupported attribute tag: " + tag);
         }
     },
 
@@ -182,13 +200,6 @@ const prv = {
 
     readMethods : function(arr, base) {
         return prv.readMultiple(arr, base, prv.readFieldOrMethod(JavaMethod));
-    },
-
-    readAttribute : function(arr, base) {
-        let name = prv.u2(arr, base);
-        let size = prv.u4(arr, base + 2);
-        console.info("readAttribute", base, size + 6);
-        return [arr.slice(base, base + size), size + 6];
     },
 
     readAttributes : function(arr, base) {
