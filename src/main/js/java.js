@@ -112,6 +112,17 @@ const prv = {
         }
     },
 
+    resolveAttribute : function(name, data) {
+        switch (name) {
+            default:
+                throw new Error("Unsupported attribute: " + name);
+        }
+    },
+
+    resolveAttributes : function(attributes, constants) {
+        return attributes.map(attrib => prv.resolveAttribute(constants[parseInt(attrib.name)].toString(), attrib.data));
+    },
+
     readConstant : function(arr, offset) {
         let tag = prv.u1(arr, offset);
         offset += 1;
@@ -121,27 +132,21 @@ const prv = {
             case 1:
                 let length = prv.u2(arr, offset);
                 return [new StringView(arr, "UTF-8", offset + 2, length), length + 3 ]
-                break;
             // Methodref
             case 10:
                 return [new CompositeConstantRef("method", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
-                break;
             // Fieldref
             case 9:
                 return [new CompositeConstantRef("field", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
-                break;
             // String
             case 8:
                 return [new ConstantRef("string", prv.u2(arr, offset)), 3];
-                break;
             // Class
             case 7:
                 return [new ConstantRef("class", prv.u2(arr, offset)), 3];
-                break;
             // NameAndType
             case 12:
                 return [new CompositeConstantRef("name&type", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
-                break;
             default:
                 throw new Error("Unsupported constant tag: " + tag);
         }
@@ -150,14 +155,7 @@ const prv = {
     readAttribute : function(arr, base) {
         let tag = prv.u2(arr, base);
         let size = prv.u4(arr, base + 2);
-        console.info("readAttribute", base, size + 6, "->", tag);
-        switch (tag) {
-            // Code
-            case 9:
-                return [new JavaAttribute("Code"", arr.slice(base + 6, base + 6 + size)), size + 6];
-            default:
-                throw new Error("Unsupported attribute tag: " + tag);
-        }
+        return [new JavaAttribute(tag, arr.slice(base + 6, base + 6 + size)), size + 6]
     },
 
     readConstants : function(arr, base) {
@@ -183,27 +181,28 @@ const prv = {
         return prv.readMultiple(arr, base, prv.readInterface);
     },
 
-    readFieldOrMethod : function(Factory) {
+    readFieldOrMethod : function(Factory, constants) {
         return function(arr, base) {
             let access = prv.u2(arr, base);
             let name = new ConstantRef("name", prv.u2(arr, base + 2));
             let descriptor = new ConstantRef("name", prv.u2(arr, base + 4));
-            let [attributes, lastOffset] = prv.readAttributes(arr, base + 6);
+            let [attributes, lastOffset] = prv.readAttributes(arr, base + 6, constants);
             let field = new Factory(access, name, descriptor, attributes);
             return [field, lastOffset - base];
         }
     },
 
-    readFields : function(arr, base) {
-        return prv.readMultiple(arr, base, prv.readFieldOrMethod(JavaField));
+    readFields : function(arr, base, constants) {
+        return prv.readMultiple(arr, base, prv.readFieldOrMethod(JavaField, constants));
     },
 
-    readMethods : function(arr, base) {
-        return prv.readMultiple(arr, base, prv.readFieldOrMethod(JavaMethod));
+    readMethods : function(arr, base, constants) {
+        return prv.readMultiple(arr, base, prv.readFieldOrMethod(JavaMethod, constants));
     },
 
-    readAttributes : function(arr, base) {
-        return prv.readMultiple(arr, base, prv.readAttribute);
+    readAttributes : function(arr, base, constants) {
+        let [attribs, lastOffset] = prv.readMultiple(arr, base, prv.readAttribute(constants));
+        return [prv.resolveAttributes(attribs, constants), lastOffset];
     },
 }
 
@@ -229,10 +228,10 @@ JavaJS.prototype.load = function(binary) {
 
     let constantsOffset = 8;
     let [constants, metaOffset] = prv.readConstants(clazz, constantsOffset);
-    let [meta, fieldsOffset] = prv.readMeta(clazz, metaOffset);
-    let [fields, methodsOffset] = prv.readFields(clazz, fieldsOffset);
-    let [methods, attribsOffset] = prv.readMethods(clazz, methodsOffset);
-    let [attributes, end] = prv.readAttributes(clazz, attribsOffset);
+    let [meta, fieldsOffset] = prv.readMeta(clazz, metaOffset, constants);
+    let [fields, methodsOffset] = prv.readFields(clazz, fieldsOffset, constants);
+    let [methods, attribsOffset] = prv.readMethods(clazz, methodsOffset, constants);
+    let [attributes, end] = prv.readAttributes(clazz, attribsOffset, constants);
 
     if (end !== binary.byteLength) {
         console.warn("Class binary was not fully consumed");
