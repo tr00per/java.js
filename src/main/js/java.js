@@ -201,7 +201,7 @@ const prv = {
     },
 
     readAttributes : function(arr, base, constants) {
-        let [attribs, lastOffset] = prv.readMultiple(arr, base, prv.readAttribute(constants));
+        let [attribs, lastOffset] = prv.readMultiple(arr, base, prv.readAttribute);
         return [prv.resolveAttributes(attribs, constants), lastOffset];
     },
 }
