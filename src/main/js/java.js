@@ -42,6 +42,14 @@ let JavaClass = function(access, name, parent, interfaces, constants, fields, me
     this.attributes = attributes;
 }
 
+let CodeBlock = function(maxStack, maxLocals, code, exceptionHandlers, attributes) {
+    this.maxStack = maxStack;
+    this.maxLocals = maxLocals;
+    this.code = code
+    this.exceptionHandlers = exceptionHandlers
+    this.attributes = attributes
+}
+
 const prv = {
     magic : 0xCAFEBABE,
     supportedVersion : [52, 0],
@@ -112,15 +120,26 @@ const prv = {
         }
     },
 
-    resolveAttribute : function(name, data) {
+    resolveAttribute : function(name, data, constants) {
         switch (name) {
+            case "Code":
+                let maxStack = prv.u2(data, 0);
+                let maxLocals = prv.u2(data, 2);
+                let codeLen = prv.u4(data, 4);
+                let codeBlob = //slice
+                // readMultiple handlers
+                // readAttributes
+                return new CodeBlock(maxStack, maxLocals, codeBlob, exceptionHandlers, attributes);
+            case "SourceFile":
+                console.debug("Skipping", name, "attribute");
+                break;
             default:
                 throw new Error("Unsupported attribute: " + name);
         }
     },
 
     resolveAttributes : function(attributes, constants) {
-        return attributes.map(attrib => prv.resolveAttribute(constants[parseInt(attrib.name)].toString(), attrib.data));
+        return attributes.map(attrib => prv.resolveAttribute(constants[parseInt(attrib.name)].toString(), attrib.data, constants));
     },
 
     readConstant : function(arr, offset) {
@@ -131,7 +150,7 @@ const prv = {
             // Utf8
             case 1:
                 let length = prv.u2(arr, offset);
-                return [new StringView(arr, "UTF-8", offset + 2, length), length + 3 ]
+                return [new StringView(arr, "UTF-8", offset + 2, length), length + 3];
             // Methodref
             case 10:
                 return [new CompositeConstantRef("method", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
