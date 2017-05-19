@@ -2,40 +2,101 @@
 "use strict";
 
 const NotResolvedYet = {};
+NotResolvedYet.toString = () => "NotResolvedYet";
 
-let ConstantRef = function(type, idx) {
+function constantReferenceToString() {
+    if (this.value === NotResolvedYet) {
+        console.error("Constant not resolved!", this);
+        throw new Error("Constant not resolved!");
+    }
+    return this.value;
+}
+
+const ConstantRef = function(type, idx) {
     this.type = type;
     this.idx = idx;
     this.value = NotResolvedYet;
 }
+ConstantRef.prototype.toString = constantReferenceToString
 
-let CompositeConstantRef = function(type, idx1, idx2) {
+const CompositeConstantRef = function(type, idx1, idx2) {
     this.type = type;
     this.idx1 = idx1;
     this.idx2 = idx2;
     this.value = NotResolvedYet;
 }
+CompositeConstantRef.prototype.toString = constantReferenceToString
 
-let JavaAttribute = function(name, data) {
+const ConstantRefPool = {
+    references : [],
+    newRef : function(type, idx) {
+        let ref = new ConstantRef(type, idx);
+        ConstantRefPool.references.push(ref);
+        return ref;
+    },
+    newCompRef : function(type, idx1, idx2) {
+        let ref = new CompositeConstantRef(type, idx1, idx2);
+        ConstantRefPool.references.push(ref);
+        return ref;
+    },
+    determineInfix : function(ref) {
+        if (ref.type === "name&type") {
+            return ":";
+        }
+        else if (ref.type === "method" || ref.type === "field") {
+            return ".";
+        }
+        else {
+            throw new Error("Unknown references type: " + ref.type);
+        }
+    },
+    resolveIndex : function(constants, idx) {
+        let target = constants[idx];
+        if (target.value === NotResolvedYet) {
+            ConstantRefPool.resolveConstant(constants)(target);
+        }
+        return target.toString();
+    },
+    resolveConstant : constants => function(ref) {
+        if (ref.value !== NotResolvedYet) {
+            return;
+        }
+        if (ref instanceof ConstantRef) {
+            ref.value = ConstantRefPool.resolveIndex(constants, ref.idx);
+        }
+        else if (ref instanceof CompositeConstantRef) {
+            let infix = ConstantRefPool.determineInfix(ref);
+            ref.value = ConstantRefPool.resolveIndex(constants, ref.idx1) + infix + ConstantRefPool.resolveIndex(constants, ref.idx2);
+        }
+        else {
+            throw new Error("Unknown reference type!", ref);
+        }
+    },
+    resolveReferences(constants) {
+        ConstantRefPool.references.forEach(ConstantRefPool.resolveConstant(constants));
+    }
+}
+
+const JavaAttribute = function(name, data) {
     this.name = name;
     this.data = data;
 }
 
-let JavaField = function(access, name, descriptor, attributes) {
+const JavaField = function(access, name, descriptor, attributes) {
     this.access = access;
     this.name = name;
     this.descriptor = descriptor;
     this.attributes = attributes;
 }
 
-let JavaMethod = function(access, name, descriptor, attributes) {
+const JavaMethod = function(access, name, descriptor, attributes) {
     this.access = access;
     this.name = name;
     this.descriptor = descriptor;
     this.attributes = attributes;
 }
 
-let JavaClass = function(access, name, parent, interfaces, constants, fields, methods, attributes) {
+const JavaClass = function(access, name, parent, interfaces, constants, fields, methods, attributes) {
     this.access = access;
     this.name = name;
     this.parent = parent;
@@ -46,7 +107,7 @@ let JavaClass = function(access, name, parent, interfaces, constants, fields, me
     this.attributes = attributes;
 }
 
-let CodeBlock = function(maxStack, maxLocals, code, exceptionHandlers, attributes) {
+const CodeBlock = function(maxStack, maxLocals, code, exceptionHandlers, attributes) {
     this.maxStack = maxStack;
     this.maxLocals = maxLocals;
     this.code = code
@@ -91,7 +152,7 @@ const prv = {
         let offset = base + 2;
         let entries = seed === undefined ? [] : seed;
         for (let i = entries.length; i < size; ++i) {
-            var [entry, next] = entryReader(arr, offset);
+            let [entry, next] = entryReader(arr, offset);
             entries.push(entry);
             offset += next;
         }
@@ -167,19 +228,19 @@ const prv = {
                 return [new StringView(arr, "UTF-8", offset + 2, length), length + 3];
             // Methodref
             case 10:
-                return [new CompositeConstantRef("method", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
+                return [ConstantRefPool.newCompRef("method", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
             // Fieldref
             case 9:
-                return [new CompositeConstantRef("field", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
+                return [ConstantRefPool.newCompRef("field", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
             // String
             case 8:
-                return [new ConstantRef("string", prv.u2(arr, offset)), 3];
+                return [ConstantRefPool.newRef("string", prv.u2(arr, offset)), 3];
             // Class
             case 7:
-                return [new ConstantRef("class", prv.u2(arr, offset)), 3];
+                return [ConstantRefPool.newRef("class", prv.u2(arr, offset)), 3];
             // NameAndType
             case 12:
-                return [new CompositeConstantRef("name&type", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
+                return [ConstantRefPool.newCompRef("name&type", prv.u2(arr, offset), prv.u2(arr, offset + 2)), 5];
             default:
                 throw new Error("Unsupported constant tag: " + tag);
         }
@@ -199,15 +260,15 @@ const prv = {
         let offset = base;
         let meta = {};
         meta.access = prv.u2(arr, offset);
-        meta.name = new ConstantRef("this", prv.u2(arr, offset + 2))
-        meta.parent = new ConstantRef("super", prv.u2(arr, offset + 4))
+        meta.name = ConstantRefPool.newRef("this", prv.u2(arr, offset + 2))
+        meta.parent = ConstantRefPool.newRef("super", prv.u2(arr, offset + 4))
         let [interfaces, lastOffset] = prv.readInterfaces(arr, offset + 6);
         meta.interfaces = interfaces;
         return [meta, lastOffset];
     },
 
     readInterface : function(arr, base) {
-        return [new ConstantRef("interface", prv.u2(arr, base)), 2];
+        return [ConstantRefPool.newRef("interface", prv.u2(arr, base)), 2];
     },
 
     readInterfaces : function(arr, base) {
@@ -217,8 +278,8 @@ const prv = {
     readFieldOrMethod : function(Factory, constants) {
         return function(arr, base) {
             let access = prv.u2(arr, base);
-            let name = new ConstantRef("name", prv.u2(arr, base + 2));
-            let descriptor = new ConstantRef("name", prv.u2(arr, base + 4));
+            let name = ConstantRefPool.newRef("name", prv.u2(arr, base + 2));
+            let descriptor = ConstantRefPool.newRef("name", prv.u2(arr, base + 4));
             let [attributes, lastOffset] = prv.readAttributes(arr, base + 6, constants);
             let field = new Factory(access, name, descriptor, attributes);
             return [field, lastOffset - base];
@@ -237,21 +298,9 @@ const prv = {
         let [attribs, lastOffset] = prv.readMultiple(arr, base, prv.readAttribute);
         return [prv.resolveAttributes(attribs, constants), lastOffset];
     },
-
-    resolveConstant : function(ref, constants) {
-        if (ref instanceOf ConstantRef) {
-            //
-        }
-        else if (ref instanceOf CompositeConstantRef) {
-            //
-        }
-        else {
-            throw new Error("Unknown reference type!", ref);
-        }
-    }
 }
 
-let JavaJS = function() {
+const JavaJS = function() {
     this.classes = new Map();
 }
 
@@ -281,6 +330,8 @@ JavaJS.prototype.load = function(binary) {
     if (end !== binary.byteLength) {
         console.warn("Class binary was not fully consumed");
     }
+
+    ConstantRefPool.resolveReferences(constants);
 
     let newClass = new JavaClass(meta.access, meta.name, meta.parent, meta.interfaces, constants, fields, methods, attributes);
     if (this.register(newClass)) {
