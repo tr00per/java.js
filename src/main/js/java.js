@@ -1,15 +1,19 @@
 (function(global) {
 "use strict";
 
+const NotResolvedYet = {};
+
 let ConstantRef = function(type, idx) {
     this.type = type;
     this.idx = idx;
+    this.value = NotResolvedYet;
 }
 
 let CompositeConstantRef = function(type, idx1, idx2) {
     this.type = type;
     this.idx1 = idx1;
     this.idx2 = idx2;
+    this.value = NotResolvedYet;
 }
 
 let JavaAttribute = function(name, data) {
@@ -120,18 +124,28 @@ const prv = {
         }
     },
 
+    readHandler : function() {
+        console.warn("readHandler() stub", arguments)
+        return null;
+    },
+
     resolveAttribute : function(name, data, constants) {
         switch (name) {
             case "Code":
                 let maxStack = prv.u2(data, 0);
                 let maxLocals = prv.u2(data, 2);
                 let codeLen = prv.u4(data, 4);
-                let codeBlob = //slice
-                // readMultiple handlers
-                // readAttributes
-                return new CodeBlock(maxStack, maxLocals, codeBlob, exceptionHandlers, attributes);
+                let codeBlob = data.slice(8, 8 + codeLen);
+                let [handlers, lastOffset] = prv.readMultiple(data, 8 + codeLen, prv.readHandler);
+                let [attributes, end] = prv.readAttributes(data, lastOffset, constants);
+
+                if (end !== data.byteLength) {
+                    console.warn("Code block was not fully consumed");
+                }
+                return new CodeBlock(maxStack, maxLocals, codeBlob, handlers, attributes);
             case "SourceFile":
-                console.debug("Skipping", name, "attribute");
+            case "LineNumberTable":
+                console.warn("Skipping", name, "attribute");
                 break;
             default:
                 throw new Error("Unsupported attribute: " + name);
@@ -223,6 +237,18 @@ const prv = {
         let [attribs, lastOffset] = prv.readMultiple(arr, base, prv.readAttribute);
         return [prv.resolveAttributes(attribs, constants), lastOffset];
     },
+
+    resolveConstant : function(ref, constants) {
+        if (ref instanceOf ConstantRef) {
+            //
+        }
+        else if (ref instanceOf CompositeConstantRef) {
+            //
+        }
+        else {
+            throw new Error("Unknown reference type!", ref);
+        }
+    }
 }
 
 let JavaJS = function() {
